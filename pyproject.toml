@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+authors = [
+    {name = "Maxim Bonnaerens", email = "maxim@bonnaerens.com"},
+]
+name = "nfst"
+version = "0.0.1"
+dependencies=[
+    "nerfstudio"
+]
+
+[project.entry-points."nerfstudio.method_configs"]
+nerfacto-mip360 = "nfst.configs.mipnerf360_data:nerfacto_mipnerf360"
+
+[project.entry-points."nerfstudio.dataparser_configs"]
+MipNerf360DataParserConfig = 'nfst.dataparsers.mipnerf360:MipNerf360DataParserConfigSpecification'
+
+[tool.setuptools]
+include-package-data = true
+packages = [
+    "nfst"
+]
+
+[tool.jupytext]
+formats = "ipynb,scripts//py:percent"
