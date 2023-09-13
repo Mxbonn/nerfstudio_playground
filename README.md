@@ -2,5 +2,5 @@
 
 ## Projects
 
-[ ] Reproduce nerfacto results from siggraph paper
-[ ] Implement mipnerf360
+- [ ] Reproduce nerfacto results from siggraph paper
+- [ ] Implement mipnerf360
