@@ -14,7 +14,7 @@ from nerfstudio.engine.trainer import TrainerConfig
 from nerfstudio.models.nerfacto import NerfactoModelConfig
 from nerfstudio.pipelines.base_pipeline import VanillaPipelineConfig
 
-from nfst.dataparsers.mipnerf360 import Mipnerf360DataParserConfig
+from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
 
 
 nerfacto_mipnerf360 = MethodSpecification(
@@ -27,7 +27,7 @@ nerfacto_mipnerf360 = MethodSpecification(
         mixed_precision=True,
         pipeline=VanillaPipelineConfig(
             datamanager=VanillaDataManagerConfig(
-                dataparser=Mipnerf360DataParserConfig(),
+                dataparser=NerfstudioDataParserConfig(),
                 train_num_rays_per_batch=4096,
                 eval_num_rays_per_batch=4096,
                 camera_optimizer=CameraOptimizerConfig(
@@ -43,15 +43,11 @@ nerfacto_mipnerf360 = MethodSpecification(
         optimizers={
             "proposal_networks": {
                 "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-                "scheduler": ExponentialDecaySchedulerConfig(
-                    lr_final=0.0001, max_steps=200000
-                ),
+                "scheduler": None,
             },
             "fields": {
                 "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-                "scheduler": ExponentialDecaySchedulerConfig(
-                    lr_final=0.0001, max_steps=200000
-                ),
+                "scheduler": None,
             },
         },
         viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
