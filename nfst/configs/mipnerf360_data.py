@@ -54,4 +54,3 @@ nerfacto_mipnerf360 = MethodSpecification(
         vis="viewer+wandb",
     ),
 )
-

@@ -33,7 +33,7 @@ from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
 from nerfstudio.fields.vanilla_nerf_field import NeRFField
 from nerfstudio.model_components.losses import (
-    MSELoss,
+    CharbonnierLoss,
     distortion_loss,
     interlevel_loss,
     orientation_loss,
@@ -187,7 +187,7 @@ class MipNerf360Model(Model):
         self.renderer_normals = NormalsRenderer()
 
         # losses
-        self.rgb_loss = MSELoss()
+        self.rgb_loss = CharbonnierLoss(eps=0.001)
 
         # metrics
         self.psnr = PeakSignalNoiseRatio(data_range=1.0)
