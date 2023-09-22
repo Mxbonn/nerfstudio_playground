@@ -16,6 +16,9 @@ dependencies=[
 nerfacto-mip360 = "nfst.configs.mipnerf360_data:nerfacto_mipnerf360"
 mipnerf360 = "nfst.configs.mipnerf360:mipnerf360"
 
+[project.entry-points."nerfstudio.dataparser_configs"]
+mipnerf360-data = "nfst.dataparsers.mipnerf360_dataparser:Mipnerf360DataParserConfigSpecification"
+
 [tool.setuptools]
 include-package-data = true
 packages = [

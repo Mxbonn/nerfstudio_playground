@@ -28,7 +28,7 @@ from nerfstudio.engine.callbacks import (
     TrainingCallbackAttributes,
     TrainingCallbackLocation,
 )
-from nerfstudio.field_components.encodings import NeRFEncoding, OffAxisEncoding
+from nerfstudio.field_components.encodings import NeRFEncoding, PolyhedronFFEncoding
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
 from nerfstudio.fields.vanilla_nerf_field import NeRFField
@@ -68,7 +68,7 @@ class MipNerf360ModelConfig(ModelConfig):
     """How far along the ray to start sampling."""
     far_plane: float = 1000000.0
     """How far along the ray to stop sampling."""
-    background_color: Literal["random", "last_sample", "black", "white"] = "last_sample"
+    background_color: Literal["random", "last_sample", "black", "white"] = "random"
     # TODO opaque background color
     """Whether to randomize the background color."""
     hidden_dim: int = 64
@@ -103,7 +103,7 @@ class MipNerf360ModelConfig(ModelConfig):
     proposal_weights_anneal_slope: float = 10.0
     """Slope of the annealing function for the proposal weights."""
     # TODO is there a need to define a max? what about always?
-    proposal_weights_anneal_max_num_iters: int = 1000
+    proposal_weights_anneal_max_num_iters: int = 30000  # should be equal to max_num_iterations
     """Max num iterations for the annealing function."""
     use_single_jitter: bool = True
     """Whether use single jitter or not for the proposal networks."""
@@ -133,23 +133,24 @@ class MipNerf360Model(Model):
 
         scene_contraction = SceneContraction()
 
-        position_encoding = OffAxisEncoding(
+        # TODO put these magic numbers in a config
+        position_encoding = PolyhedronFFEncoding(
             num_frequencies=12,
             min_freq_exp=0.0,
             max_freq_exp=11.0,
             basis_shape="icosahedron",
             basis_subdivisions=2,
-            include_input=True,
         )
-        direction_encoding = NeRFEncoding(
-            in_dim=3, num_frequencies=4, min_freq_exp=0.0, max_freq_exp=3.0, include_input=True
-        )
+        direction_encoding = NeRFEncoding(in_dim=3, num_frequencies=4, min_freq_exp=0.0, max_freq_exp=3.0)
 
         self.field = NeRFField(
             position_encoding=position_encoding,
             direction_encoding=direction_encoding,
             use_integrated_encoding=True,
             spatial_distortion=scene_contraction,
+            base_mlp_num_layers=8,
+            base_mlp_layer_width=1024,
+            head_mlp_num_layers=1,
         )
 
         # Proposal networks
@@ -159,28 +160,21 @@ class MipNerf360Model(Model):
             direction_encoding=direction_encoding,
             use_integrated_encoding=True,
             spatial_distortion=scene_contraction,
+            base_mlp_num_layers=4,
+            base_mlp_layer_width=256,
+            field_heads=None,
         )
         self.density_fns = [self.proposal_network.get_density for _ in range(self.config.num_proposal_iterations)]
 
-        # Samplers
-        def update_schedule(step):
-            return np.clip(
-                np.interp(step, [0, self.config.proposal_warmup], [0, self.config.proposal_update_every]),
-                1,
-                self.config.proposal_update_every,
-            )
 
         # Change proposal network initial sampler if uniform
-        # TODO check sampler, do we need to change the spacing_fn to reciprocal? -> no, it is already there but using a lambda
         initial_sampler = LinearDisparitySampler(single_jitter=self.config.use_single_jitter)
 
-        # TODO do we need an update schedule?
         self.proposal_sampler = ProposalNetworkSampler(
             num_nerf_samples_per_ray=self.config.num_nerf_samples_per_ray,
             num_proposal_samples_per_ray=self.config.num_proposal_samples_per_ray,
             num_proposal_network_iterations=self.config.num_proposal_iterations,
             single_jitter=self.config.use_single_jitter,
-            update_sched=update_schedule,
             initial_sampler=initial_sampler,
         )
 
