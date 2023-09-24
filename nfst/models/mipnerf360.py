@@ -38,7 +38,6 @@ from nerfstudio.model_components.losses import (
     interlevel_loss,
     orientation_loss,
     pred_normal_loss,
-    scale_gradients_by_distance_squared,
 )
 from nerfstudio.model_components.ray_samplers import (
     LinearDisparitySampler,
@@ -52,7 +51,7 @@ from nerfstudio.model_components.renderers import (
 )
 from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
-from nerfstudio.utils import colormaps, colors
+from nerfstudio.utils import colormaps
 from torch.nn import Parameter
 from torchmetrics.functional import structural_similarity_index_measure
 from torchmetrics.image import PeakSignalNoiseRatio
@@ -166,7 +165,6 @@ class MipNerf360Model(Model):
         )
         self.density_fns = [self.proposal_network.get_density for _ in range(self.config.num_proposal_iterations)]
 
-
         # Change proposal network initial sampler if uniform
         initial_sampler = LinearDisparitySampler(single_jitter=self.config.use_single_jitter)
 
@@ -178,9 +176,11 @@ class MipNerf360Model(Model):
             initial_sampler=initial_sampler,
         )
 
-        self.collider = NearFarCollider(near_plane=self.config.near_plane, far_plane=self.config.far_plane)
+        self.collider = NearFarCollider(
+            near_plane=self.config.near_plane, far_plane=self.config.far_plane, reset_near_plane=False
+        )
         # renderers
-        self.renderer_rgb = RGBRenderer(background_color=colors.WHITE)
+        self.renderer_rgb = RGBRenderer(background_color=self.config.background_color)
         self.renderer_accumulation = AccumulationRenderer()
         self.renderer_depth = DepthRenderer()
         self.renderer_expected_depth = DepthRenderer(method="expected")
@@ -240,9 +240,6 @@ class MipNerf360Model(Model):
         ray_samples: RaySamples
         ray_samples, weights_list, ray_samples_list = self.proposal_sampler(ray_bundle, density_fns=self.density_fns)
         field_outputs = self.field.forward(ray_samples, compute_normals=self.config.predict_normals)
-        # TODO what is this gradient_scaling it is false for nerfacto
-        if self.config.use_gradient_scaling:
-            field_outputs = scale_gradients_by_distance_squared(field_outputs, ray_samples)
 
         # TODO should we make an adjustment for "opaque" background color?
         # Opaque background is the same as making the the final interval infinitely wide
