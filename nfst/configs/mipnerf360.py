@@ -13,15 +13,16 @@ from nerfstudio.plugins.types import MethodSpecification
 from nfst.dataparsers.mipnerf360_dataparser import Mipnerf360DataParserConfig
 from nfst.models.mipnerf360 import MipNerf360ModelConfig
 
+mipnerf_steps=1000000
 mipnerf360 = MethodSpecification(
     description="MipNerf360",
     config=TrainerConfig(
         method_name="mipnerf360",
         steps_per_eval_batch=500,
         steps_per_eval_image=0,
-        steps_per_eval_all_images=5000,
-        steps_per_save=2000,
-        max_num_iterations=30000,
+        steps_per_eval_all_images=50000,
+        steps_per_save=10000,
+        max_num_iterations=mipnerf_steps,
         mixed_precision=False,  # TODO changing to True results in an error
         pipeline=VanillaPipelineConfig(
             datamanager=VanillaDataManagerConfig(
@@ -40,7 +41,7 @@ mipnerf360 = MethodSpecification(
                     lr_pre_warmup=0.000005,
                     lr_final=0.000005,
                     warmup_steps=2048,
-                    max_steps=30000,
+                    max_steps=mipnerf_steps,
                     ramp="linear",
                 ),
             },
@@ -50,7 +51,7 @@ mipnerf360 = MethodSpecification(
                     lr_pre_warmup=0.000005,
                     lr_final=0.000005,
                     warmup_steps=2048,
-                    max_steps=30000,
+                    max_steps=mipnerf_steps,
                     ramp="linear",
                 ),
             },

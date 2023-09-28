@@ -23,6 +23,7 @@ from typing import Dict, List, Literal, Tuple, Type
 import numpy as np
 import torch
 from nerfstudio.cameras.rays import RayBundle, RaySamples
+from nerfstudio.configs.config_utils import to_immutable_dict
 from nerfstudio.engine.callbacks import (
     TrainingCallback,
     TrainingCallbackAttributes,
@@ -41,6 +42,7 @@ from nerfstudio.model_components.losses import (
 )
 from nerfstudio.model_components.ray_samplers import (
     LinearDisparitySampler,
+    PDFSampler,
     ProposalNetworkSampler,
 )
 from nerfstudio.model_components.renderers import (
@@ -68,7 +70,6 @@ class MipNerf360ModelConfig(ModelConfig):
     far_plane: float = 1000000.0
     """How far along the ray to stop sampling."""
     background_color: Literal["random", "last_sample", "black", "white"] = "random"
-    # TODO opaque background color
     """Whether to randomize the background color."""
     hidden_dim: int = 64
     """Dimension of hidden layers"""
@@ -80,15 +81,11 @@ class MipNerf360ModelConfig(ModelConfig):
     """Number of samples per ray for each proposal network."""
     num_nerf_samples_per_ray: int = 32
     """Number of samples per ray for the nerf network."""
-    proposal_update_every: int = 5  # ????
-    """Sample every n steps after the warmup"""
-    proposal_warmup: int = 5000
-    """Scales n from 1 to proposal_update_every over this many steps"""
-    proposal_net_args_list: List[Dict] = field(
-        default_factory=lambda: [
-            {"hidden_dim": 16, "log2_hashmap_size": 17, "num_levels": 5, "max_res": 128, "use_linear": False},
-            {"hidden_dim": 16, "log2_hashmap_size": 17, "num_levels": 5, "max_res": 256, "use_linear": False},
-        ]
+    proposal_net_args: Dict = to_immutable_dict(
+        {
+            "base_mlp_num_layers": 4,
+            "base_mlp_layer_width": 256,
+        }
     )
     """Arguments for the proposal density fields."""
     interlevel_loss_mult: float = 1.0
@@ -101,17 +98,16 @@ class MipNerf360ModelConfig(ModelConfig):
     """Predicted normal loss multiplier."""
     proposal_weights_anneal_slope: float = 10.0
     """Slope of the annealing function for the proposal weights."""
-    # TODO is there a need to define a max? what about always?
-    proposal_weights_anneal_max_num_iters: int = 30000  # should be equal to max_num_iterations
+    proposal_weights_anneal_max_num_iters: int = 1000000  # should be equal to max_num_iterations
     """Max num iterations for the annealing function."""
     use_single_jitter: bool = True
     """Whether use single jitter or not for the proposal networks."""
     predict_normals: bool = False
     """Whether to predict normals or not."""
-    use_gradient_scaling: bool = False
-    """Use gradient scaler where the gradients are lower for points closer to the camera."""
-    implementation: Literal["tcnn", "torch"] = "tcnn"
-    """Which implementation to use for the model."""
+    encoding_basis_shape: Literal["icosahedron", "octahedron"] = "icosahedron"
+    """Basis shape for the encoding."""
+    encoding_basis_subdivisions: int = 2
+    """Number of subdivisions for the encoding."""
 
     def __post_init__(self):
         self.num_proposal_iterations = len(self.num_proposal_samples_per_ray)
@@ -132,13 +128,12 @@ class MipNerf360Model(Model):
 
         scene_contraction = SceneContraction()
 
-        # TODO put these magic numbers in a config
         position_encoding = PolyhedronFFEncoding(
             num_frequencies=12,
             min_freq_exp=0.0,
             max_freq_exp=11.0,
-            basis_shape="icosahedron",
-            basis_subdivisions=2,
+            basis_shape=self.config.encoding_basis_shape,
+            basis_subdivisions=self.config.encoding_basis_subdivisions,
         )
         direction_encoding = NeRFEncoding(in_dim=3, num_frequencies=4, min_freq_exp=0.0, max_freq_exp=3.0)
 
@@ -154,26 +149,26 @@ class MipNerf360Model(Model):
 
         # Proposal networks
         self.proposal_network = NeRFField(
-            # TODO match config
             position_encoding=position_encoding,
             direction_encoding=direction_encoding,
             use_integrated_encoding=True,
             spatial_distortion=scene_contraction,
-            base_mlp_num_layers=4,
-            base_mlp_layer_width=256,
             field_heads=None,
+            **self.config.proposal_net_args,
         )
         self.density_fns = [self.proposal_network.get_density for _ in range(self.config.num_proposal_iterations)]
 
         # Change proposal network initial sampler if uniform
         initial_sampler = LinearDisparitySampler(single_jitter=self.config.use_single_jitter)
 
+        pdf_sampler = PDFSampler(include_original=False, single_jitter=self.config.use_single_jitter)
         self.proposal_sampler = ProposalNetworkSampler(
             num_nerf_samples_per_ray=self.config.num_nerf_samples_per_ray,
             num_proposal_samples_per_ray=self.config.num_proposal_samples_per_ray,
             num_proposal_network_iterations=self.config.num_proposal_iterations,
             single_jitter=self.config.use_single_jitter,
             initial_sampler=initial_sampler,
+            pdf_sampler=pdf_sampler,
         )
 
         self.collider = NearFarCollider(
@@ -241,8 +236,6 @@ class MipNerf360Model(Model):
         ray_samples, weights_list, ray_samples_list = self.proposal_sampler(ray_bundle, density_fns=self.density_fns)
         field_outputs = self.field.forward(ray_samples, compute_normals=self.config.predict_normals)
 
-        # TODO should we make an adjustment for "opaque" background color?
-        # Opaque background is the same as making the the final interval infinitely wide
         weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
         weights_list.append(weights)
         ray_samples_list.append(ray_samples)
@@ -250,7 +243,6 @@ class MipNerf360Model(Model):
         rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
         with torch.no_grad():
             depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
-        # TODO what is expected depth?
         expected_depth = self.renderer_expected_depth(weights=weights, ray_samples=ray_samples)
         accumulation = self.renderer_accumulation(weights=weights)
 
